@@ -13,7 +13,7 @@ const (
 	consensusReachedMessage  = "HOORAY!!!!!!! CONSENSUS REACHED!!!!!!!"
 )
 
-var blocks = make([]BlockConsensus, 1)
+var blocks []BlockConsensus
 var currentBlock = 0
 
 type BlockConsensus struct {
@@ -27,19 +27,14 @@ type BlockConsensus struct {
 func analyzeOutput(logMap map[string]interface{}) {
 	switch logMap["message"] {
 	case proposalMessage:
-		//assumes new block will always have logMap["BlockNum"] == current block+1
 		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
 		newBlock := BlockConsensus{time, nil, nil, nil, nil}
 		blocks = append(blocks, newBlock)
 
 	case twoThirdsMessage:
+		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
 		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		if blocks[currentBlock].twoThirdsCommitted == nil {
-			blocks[currentBlock].twoThirdsCommitted = &time
-		} else {
-			//I don't think the protocol allows us to be multiple blocks behind when we get to this point in logs. Uncertain though.
-			blocks[currentBlock+1].twoThirdsCommitted = &time
-		}
+		blocks[blockNum].twoThirdsCommitted = &time
 
 	case oneHundredPercentMessage:
 		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
@@ -51,20 +46,38 @@ func analyzeOutput(logMap map[string]interface{}) {
 
 	case gracePeriodEndMessage:
 		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		if blocks[currentBlock].gracePeriodEnd == nil {
-			blocks[currentBlock].gracePeriodEnd = &time
-		} else {
-			blocks[currentBlock+1].gracePeriodEnd = &time
+		blocks[currentBlock].gracePeriodEnd = &time
+		if blocks[currentBlock].consensusReached != nil {
+			go submitBlockData(blocks[currentBlock], currentBlock)
+			currentBlock++
 		}
 
 	case consensusReachedMessage:
+		blockNum := int(logMap["blockNum"].(float64)) - 1
 		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		blocks[currentBlock].consensusReached = &time
-		submitBlockData(blocks[currentBlock])
-		currentBlock++
+		blocks[blockNum].consensusReached = &time
+		if blocks[currentBlock].gracePeriodEnd != nil {
+			submitBlockData(blocks[currentBlock], currentBlock)
+			currentBlock++
+		}
 	}
 }
 
-func submitBlockData(blockTime BlockConsensus) {
-	fmt.Println(blockTime.twoThirdsCommitted)
+func submitBlockData(blockTime BlockConsensus, block int) {
+	proposingTime := blocks[block].proposing
+	/* 	twoThirdsTime := blocks[block].twoThirdsCommitted
+	   	fmt.Printf("Time between Proposal and 2/3 Commits for block %v was %v\n", block+1, twoThirdsTime.Sub(proposingTime))
+
+	   		if blocks[block].allCommitted != nil {
+	   		allCommittedTime := blocks[block].allCommitted
+	   		fmt.Printf("Time between 2/3 Commits and 100%% Commits for block %v was %v\n", block+1, allCommittedTime.Sub(*twoThirdsTime))
+	   	}
+	*/
+	consensusReachedTime := blocks[block].consensusReached
+	//	fmt.Printf("Time between 2/3 Commits and Consensus reached for block %v was %v\n", block+1, consensusReachedTime.Sub(*twoThirdsTime))
+	fmt.Printf("Time between Proposal and Consensus Reached for block %v was %v\n", block+1, consensusReachedTime.Sub(proposingTime))
+
+	/* 	gracePeriodTime := blocks[block].gracePeriodEnd
+	   	fmt.Printf("Time after consensus reached and grace period ending for block %v was %v\n", block+1, gracePeriodTime.Sub(*consensusReachedTime))
+	*/
 }
