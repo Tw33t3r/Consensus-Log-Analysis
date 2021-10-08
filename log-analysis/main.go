@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"log"
 	"os"
 )
@@ -22,7 +21,7 @@ func main() {
 	reader := bufio.NewScanner(file)
 	for reader.Scan() {
 		parsedOutput := parse(reader.Text())
-		fmt.Println(parsedOutput.Message)
+		analyzeOutput(parsedOutput)
 	}
 
 	if err := reader.Err(); err != nil {
