@@ -1,12 +1,21 @@
 # Consensus-Log-Analysis
 Analyze Harmony Logs for Consensus Performance Metrics
 
+# Usage
+```console
+cd log-analysis
+go run . logDirectory
+```
+
 
 ## TODO
 Make data easily digestable instead of spewing to command line.
   * Build some graphs
   * Populate some webpage with graphs
   * Or send data to jupyter/Redo project for jupyter
+
+Use better metrics for data analysis
+  * Currently just delta of simple metrics, could use many more higher order metrics as well.
 
 Ensure this runs on real logs/further testing
   * The only logs accessible for this initial commit were local machine test logs. 
