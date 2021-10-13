@@ -2,20 +2,22 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const (
 	proposalMessage          = "PROPOSING NEW BLOCK ------------------------------------------------"
 	recievedCommitSigMessage = "[ProposeNewBlock] received commit sigs asynchronously"
-	//TODO Change from exact to Regex match
-	crosslinkProposalMessage = "[ProposeNewBlock] Proposed 1 crosslinks from 1 pending crosslinks"
+	//Partial match, uses contains instead of ==
+	crosslinkProposalMessage = " pending crosslinks"
 	commitSigReadyMessage    = "Commit sigs are ready"
 	newBlockProposalMessage  = "=========Successfully Proposed New Block=========="
 	startingConsensusMessage = "[ConsensusMainLoop] STARTING CONSENSUS"
 	sentAnnounceMessage      = "[Announce] Sent Announce Message!!"
-	//TODO parse further on seeing message==quorum details, can be any of the prepares or any of the commits
 	quorumMessage            = "Quorum details"
+	addVoteMessage           = "[AddNewVote] New Vote Added!"
 	prepareQuorumMessage     = "[OnPrepare] Received Enough Prepare Signatures"
 	sentPrepareMessage       = "[OnPrepare] Sent Prepared Message!!"
 	twoThirdsMessage         = "[OnCommit] 2/3 Enough commits received"
@@ -27,71 +29,139 @@ const (
 	consensusReachedMessage  = "HOORAY!!!!!!! CONSENSUS REACHED!!!!!!!"
 )
 
-var blocks []BlockConsensus
+var blocks []map[string]time.Time
 var currentBlock = 0
+var furthestBlock = -1
 
-type BlockConsensus struct {
-	proposing          time.Time
-	twoThirdsCommitted *time.Time
-	allCommitted       *time.Time
-	gracePeriodEnd     *time.Time
-	consensusReached   *time.Time
+//Go constant string
+func getMeasuredMetrics() []string {
+	return []string{"proposing", "crosslinkProposal", "receivedCommitSig", "commitSigReady", "newBlockProposal",
+		"startingConsensus", "sentAnnounce", "firstPrepare", "enoughPrepared", "sentPrepare", "firstCommit",
+		"enoughCommitted", "allCommitted", "gracePeriodEnd", "consensusReached"}
 }
 
 func analyzeOutput(logMap map[string]interface{}) {
+	messageTime, _ := time.Parse(time.RFC3339, logMap["time"].(string))
+
 	switch logMap["message"] {
 	case proposalMessage:
-		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		newBlock := BlockConsensus{time, nil, nil, nil, nil}
+		newBlock := map[string]time.Time{"proposing": messageTime}
 		blocks = append(blocks, newBlock)
+		furthestBlock++
+
+	case recievedCommitSigMessage:
+		if _, exists := blocks[currentBlock]["recievedCommitSig"]; !exists {
+			blocks[currentBlock]["receivedCommitSig"] = messageTime
+		}
+
+	case commitSigReadyMessage:
+		if _, exists := blocks[currentBlock]["commitSigReady"]; !exists {
+			blocks[currentBlock]["commitSigReady"] = messageTime
+		}
+
+	case newBlockProposalMessage:
+		blockNum := int(logMap["blockNum"].(float64)) - 1
+		blocks[blockNum]["newBlockProposal"] = messageTime
+
+	case startingConsensusMessage:
+		blockNum := int(logMap["myBlock"].(float64)) - 1
+		blocks[blockNum]["startingConsensus"] = messageTime
+
+	case sentAnnounceMessage:
+		blockNum := int(logMap["myBlock"].(float64)) - 1
+		blocks[blockNum]["sentAnnounce"] = messageTime
+
+	//Optimized for readability/future-proofing, can be faster by checking if signers-count==1 first
+	case quorumMessage:
+		if logMap["phase"] == "Prepare" {
+			if _, exists := blocks[currentBlock]["firstPrepare"]; !exists {
+				blocks[currentBlock]["firstPrepare"] = messageTime
+			}
+		} else if logMap["phase"] == "Commit" {
+			if _, exists := blocks[currentBlock]["firstCommit"]; !exists {
+				blocks[currentBlock]["firstCommit"] = messageTime
+			}
+		}
+
+	//Optimized for readability/future-proofing, can be faster by checking if signers-count==1 first
+	case addVoteMessage:
+		if logMap["phase"] == "Prepare" {
+			if _, exists := blocks[currentBlock]["firstPrepare"]; !exists {
+				blocks[currentBlock]["firstPrepare"] = messageTime
+			}
+		} else if logMap["phase"] == "Commit" {
+			if _, exists := blocks[currentBlock]["firstCommit"]; !exists {
+				blocks[currentBlock]["firstCommit"] = messageTime
+			}
+		}
+
+	case prepareQuorumMessage:
+		if _, exists := blocks[currentBlock]["enoughPrepared"]; !exists {
+			blocks[currentBlock]["enoughPrepared"] = messageTime
+		}
+
+	case sentPrepareMessage:
+		blockNum := int(logMap["blockNum"].(float64)) - 1
+		blocks[blockNum]["sentPrepare"] = messageTime
 
 	case twoThirdsMessage:
 		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
-		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		blocks[blockNum].twoThirdsCommitted = &time
+		blocks[blockNum]["enoughCommitted"] = messageTime
+
+	case gracePeriodStartMessage:
+		blockNum := int(logMap["myBlock"].(float64)) - 1
+		blocks[blockNum]["gracePeriodStart"] = messageTime
+
+	case insertedNewBlockMessage:
+		blockNum, _ := strconv.Atoi(logMap["number"].(string))
+		blocks[blockNum-1]["insertedNewBlock"] = messageTime
+
+	case sentCommittedMessage:
+		blockNum := int(logMap["blockNum"].(float64)) - 1
+		blocks[blockNum]["sentCommitted"] = messageTime
 
 	case oneHundredPercentMessage:
-		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		if blocks[currentBlock].allCommitted == nil {
-			blocks[currentBlock].allCommitted = &time
-		} else {
-			blocks[currentBlock+1].twoThirdsCommitted = &time
-		}
+		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
+		blocks[blockNum]["allCommitted"] = messageTime
 
 	case gracePeriodEndMessage:
-		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		blocks[currentBlock].gracePeriodEnd = &time
-		if blocks[currentBlock].consensusReached != nil {
-			go submitBlockData(blocks[currentBlock], currentBlock)
+		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
+		blocks[blockNum]["gracePeriodEnd"] = messageTime
+		if _, exists := blocks[blockNum]["consensusReached"]; exists {
+			submitBlockData(blocks[blockNum], currentBlock)
 			currentBlock++
 		}
 
 	case consensusReachedMessage:
 		blockNum := int(logMap["blockNum"].(float64)) - 1
-		time, _ := time.Parse(time.RFC3339, logMap["time"].(string))
-		blocks[blockNum].consensusReached = &time
-		if blocks[currentBlock].gracePeriodEnd != nil {
+		blocks[blockNum]["consensusReached"] = messageTime
+		if _, exists := blocks[currentBlock]["gracePeriodEnd"]; exists {
 			submitBlockData(blocks[currentBlock], currentBlock)
 			currentBlock++
+		}
+	default:
+		if strings.Contains(logMap["message"].(string), " pending crosslinks") {
+			if _, exists := blocks[currentBlock]["crosslinkProposal"]; !exists {
+				blocks[currentBlock]["crosslinkProposal"] = messageTime
+			} else {
+				blocks[furthestBlock]["crosslinkProposal"] = messageTime
+			}
 		}
 	}
 }
 
-func submitBlockData(blockTime BlockConsensus, block int) {
-	proposingTime := blocks[block].proposing
-	/* 	twoThirdsTime := blocks[block].twoThirdsCommitted
-	   	fmt.Printf("Time between Proposal and 2/3 Commits for block %v was %v\n", block+1, twoThirdsTime.Sub(proposingTime))
-
-	   		if blocks[block].allCommitted != nil {
-	   		allCommittedTime := blocks[block].allCommitted
-	   		fmt.Printf("Time between 2/3 Commits and 100%% Commits for block %v was %v\n", block+1, allCommittedTime.Sub(*twoThirdsTime))
-	   	}
-	*/
-	consensusReachedTime := blocks[block].consensusReached
-	//	fmt.Printf("Time between 2/3 Commits and Consensus reached for block %v was %v\n", block+1, consensusReachedTime.Sub(*twoThirdsTime))
-	fmt.Printf("Time between Proposal and Consensus Reached for block %v was %v\n", block+1, consensusReachedTime.Sub(proposingTime))
-
-	/* 	gracePeriodTime := blocks[block].gracePeriodEnd
-	   	fmt.Printf("Time after consensus reached and grace period ending for block %v was %v\n", block+1, gracePeriodTime.Sub(*consensusReachedTime))
-	*/
+func submitBlockData(blockTime map[string]time.Time, block int) {
+	metrics := getMeasuredMetrics()
+	for metricIndex, metric := range metrics {
+		if metricTime, exists := blockTime[metric]; exists {
+			if metricIndex < len(metrics)-1 {
+				nextMetric := metrics[metricIndex+1]
+				if nextMetricTime, exists := blockTime[nextMetric]; exists {
+					fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block+1, nextMetricTime.Sub(metricTime))
+				}
+			}
+		} else {
+			fmt.Printf("There is no metric %s for block %v\n", metric, block+1)
+		}
+	}
 }
