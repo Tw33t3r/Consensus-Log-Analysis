@@ -7,7 +7,21 @@ import (
 
 const (
 	proposalMessage          = "PROPOSING NEW BLOCK ------------------------------------------------"
+	recievedCommitSigMessage = "[ProposeNewBlock] received commit sigs asynchronously"
+	//TODO Change from exact to Regex match
+	crosslinkProposalMessage = "[ProposeNewBlock] Proposed 1 crosslinks from 1 pending crosslinks"
+	commitSigReadyMessage    = "Commit sigs are ready"
+	newBlockProposalMessage  = "=========Successfully Proposed New Block=========="
+	startingConsensusMessage = "[ConsensusMainLoop] STARTING CONSENSUS"
+	sentAnnounceMessage      = "[Announce] Sent Announce Message!!"
+	//TODO parse further on seeing message==quorum details, can be any of the prepares or any of the commits
+	quorumMessage            = "Quorum details"
+	prepareQuorumMessage     = "[OnPrepare] Received Enough Prepare Signatures"
+	sentPrepareMessage       = "[OnPrepare] Sent Prepared Message!!"
 	twoThirdsMessage         = "[OnCommit] 2/3 Enough commits received"
+	gracePeriodStartMessage  = "[OnCommit] Starting Grace Period"
+	insertedNewBlockMessage  = "Inserted new block"
+	sentCommittedMessage     = "[preCommitAndPropose] Sent Committed Message"
 	oneHundredPercentMessage = "[OnCommit] 100% Enough commits received"
 	gracePeriodEndMessage    = "[OnCommit] Commit Grace Period Ended"
 	consensusReachedMessage  = "HOORAY!!!!!!! CONSENSUS REACHED!!!!!!!"

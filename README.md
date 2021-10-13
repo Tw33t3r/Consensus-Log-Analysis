@@ -4,7 +4,7 @@ Analyze Harmony Logs for Consensus Performance Metrics
 # Usage
 ```console
 cd log-analysis
-go run . logDirectory
+go run /path/to/log
 ```
 
 
