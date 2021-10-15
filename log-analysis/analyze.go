@@ -9,6 +9,7 @@ import (
 
 const (
 	proposalMessage          = "PROPOSING NEW BLOCK ------------------------------------------------"
+	vrfGeneratedMessage      = "[GenerateVrfAndProof] Leader generated a VRF"
 	recievedCommitSigMessage = "[ProposeNewBlock] received commit sigs asynchronously"
 	//Partial match, uses contains instead of ==
 	crosslinkProposalMessage = " pending crosslinks"
@@ -33,11 +34,11 @@ var blocks []map[string]time.Time
 var currentBlock = 0
 var furthestBlock = -1
 
-//Go constant string
+//Go constant string array
 func getMeasuredMetrics() []string {
-	return []string{"proposing", "crosslinkProposal", "receivedCommitSig", "commitSigReady", "newBlockProposal",
+	return []string{"proposing", "vrfGenerated", "crosslinkProposal", "receivedCommitSig", "commitSigReady", "newBlockProposal",
 		"startingConsensus", "sentAnnounce", "firstPrepare", "enoughPrepared", "sentPrepare", "firstCommit",
-		"enoughCommitted", "allCommitted", "gracePeriodEnd", "consensusReached"}
+		"enoughCommitted", "95PercentCommitted", "100PercentCommitted", "gracePeriodEnd", "consensusReached"}
 }
 
 func analyzeOutput(logMap map[string]interface{}) {
@@ -48,6 +49,10 @@ func analyzeOutput(logMap map[string]interface{}) {
 		newBlock := map[string]time.Time{"proposing": messageTime}
 		blocks = append(blocks, newBlock)
 		furthestBlock++
+
+	case vrfGeneratedMessage:
+		blockNum := int(logMap["BlockNum"].(float64)) - 1
+		blocks[blockNum]["vrfGenerated"] = messageTime
 
 	case recievedCommitSigMessage:
 		if _, exists := blocks[currentBlock]["recievedCommitSig"]; !exists {
@@ -71,7 +76,6 @@ func analyzeOutput(logMap map[string]interface{}) {
 		blockNum := int(logMap["myBlock"].(float64)) - 1
 		blocks[blockNum]["sentAnnounce"] = messageTime
 
-	//Optimized for readability/future-proofing, can be faster by checking if signers-count==1 first
 	case quorumMessage:
 		if logMap["phase"] == "Prepare" {
 			if _, exists := blocks[currentBlock]["firstPrepare"]; !exists {
@@ -83,15 +87,25 @@ func analyzeOutput(logMap map[string]interface{}) {
 			}
 		}
 
-	//Optimized for readability/future-proofing, can be faster by checking if signers-count==1 first
 	case addVoteMessage:
 		if logMap["phase"] == "Prepare" {
-			if _, exists := blocks[currentBlock]["firstPrepare"]; !exists {
-				blocks[currentBlock]["firstPrepare"] = messageTime
+			//Check for first instance of prepare after announce is sent out
+			if _, exists := blocks[currentBlock]["sentAnnounce"]; exists {
+				if _, exists := blocks[currentBlock]["firstPrepare"]; !exists {
+					blocks[currentBlock]["firstPrepare"] = messageTime
+				}
 			}
 		} else if logMap["phase"] == "Commit" {
-			if _, exists := blocks[currentBlock]["firstCommit"]; !exists {
-				blocks[currentBlock]["firstCommit"] = messageTime
+			//Check for first instance of commit after announce is sent out
+			if _, exists := blocks[currentBlock]["sentPrepare"]; exists {
+				if _, exists := blocks[currentBlock]["firstCommit"]; !exists {
+					blocks[currentBlock]["firstCommit"] = messageTime
+				}
+				if value, _ := strconv.ParseFloat(logMap["total-power-of-signers"].(string), 32); value > .95 {
+					if _, exists := blocks[currentBlock]["95PercentCommitted"]; !exists {
+						blocks[currentBlock]["95PercentCommitted"] = messageTime
+					}
+				}
 			}
 		}
 
@@ -122,13 +136,13 @@ func analyzeOutput(logMap map[string]interface{}) {
 
 	case oneHundredPercentMessage:
 		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
-		blocks[blockNum]["allCommitted"] = messageTime
+		blocks[blockNum]["100PercentCommitted"] = messageTime
 
 	case gracePeriodEndMessage:
 		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
 		blocks[blockNum]["gracePeriodEnd"] = messageTime
 		if _, exists := blocks[blockNum]["consensusReached"]; exists {
-			submitBlockData(blocks[blockNum], currentBlock)
+			submitBlockData(currentBlock)
 			currentBlock++
 		}
 
@@ -136,7 +150,7 @@ func analyzeOutput(logMap map[string]interface{}) {
 		blockNum := int(logMap["blockNum"].(float64)) - 1
 		blocks[blockNum]["consensusReached"] = messageTime
 		if _, exists := blocks[currentBlock]["gracePeriodEnd"]; exists {
-			submitBlockData(blocks[currentBlock], currentBlock)
+			submitBlockData(currentBlock)
 			currentBlock++
 		}
 	default:
@@ -150,18 +164,22 @@ func analyzeOutput(logMap map[string]interface{}) {
 	}
 }
 
-func submitBlockData(blockTime map[string]time.Time, block int) {
+func submitBlockData(block int) {
+	blockTime := blocks[block]
 	metrics := getMeasuredMetrics()
-	for metricIndex, metric := range metrics {
-		if metricTime, exists := blockTime[metric]; exists {
-			if metricIndex < len(metrics)-1 {
-				nextMetric := metrics[metricIndex+1]
-				if nextMetricTime, exists := blockTime[nextMetric]; exists {
-					fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block+1, nextMetricTime.Sub(metricTime))
-				}
-			}
+	firstMetric := metrics[0]
+	firstMetricTime := blockTime[firstMetric]
+	compareNextMetric(firstMetric, firstMetricTime, blockTime, metrics[1:], block)
+}
+
+func compareNextMetric(metric string, metricTime time.Time, metricTimes map[string]time.Time, metricArray []string, block int) {
+	if len(metricArray) > 0 {
+		nextMetric := metricArray[0]
+		if nextMetricTime, exists := metricTimes[nextMetric]; exists {
+			fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block+1, nextMetricTime.Sub(metricTime))
+			compareNextMetric(nextMetric, nextMetricTime, metricTimes, metricArray[1:], block)
 		} else {
-			fmt.Printf("There is no metric %s for block %v\n", metric, block+1)
+			compareNextMetric(metric, metricTime, metricTimes, metricArray[1:], block)
 		}
 	}
 }
