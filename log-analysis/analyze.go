@@ -179,6 +179,7 @@ func compareNextMetric(metric string, metricTime time.Time, metricTimes map[stri
 			fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block+1, nextMetricTime.Sub(metricTime))
 			compareNextMetric(nextMetric, nextMetricTime, metricTimes, metricArray[1:], block)
 		} else {
+			fmt.Printf("There is no metric %s for block %v\n", nextMetric, block+1)
 			compareNextMetric(metric, metricTime, metricTimes, metricArray[1:], block)
 		}
 	}
