@@ -32,13 +32,15 @@ const (
 
 var blocks []map[string]time.Time
 var currentBlock = 0
+var blockOffset = 0
 var furthestBlock = -1
+var initializedFirstBlock = false
 
 //Go constant string array
 func getMeasuredMetrics() []string {
-	return []string{"proposing", "vrfGenerated", "crosslinkProposal", "receivedCommitSig", "commitSigReady", "newBlockProposal",
+	return []string{"proposing", "receivedCommitSig", "vrfGenerated", "crosslinkProposal", "commitSigReady", "newBlockProposal",
 		"startingConsensus", "sentAnnounce", "firstPrepare", "enoughPrepared", "sentPrepare", "firstCommit",
-		"enoughCommitted", "95PercentCommitted", "100PercentCommitted", "gracePeriodEnd", "consensusReached"}
+		"enoughCommitted", "95PercentCommitted", "100PercentCommitted", "consensusReached", "gracePeriodEnd"}
 }
 
 func analyzeOutput(logMap map[string]interface{}) {
@@ -46,35 +48,48 @@ func analyzeOutput(logMap map[string]interface{}) {
 
 	switch logMap["message"] {
 	case proposalMessage:
+		if !initializedFirstBlock {
+			blockOffset = int(logMap["blockNum"].(float64))
+			initializedFirstBlock = true
+		}
 		newBlock := map[string]time.Time{"proposing": messageTime}
 		blocks = append(blocks, newBlock)
 		furthestBlock++
 
 	case vrfGeneratedMessage:
-		blockNum := int(logMap["BlockNum"].(float64)) - 1
-		blocks[blockNum]["vrfGenerated"] = messageTime
+		blockNum := int(logMap["BlockNum"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["vrfGenerated"] = messageTime
+		}
 
 	case recievedCommitSigMessage:
-		if _, exists := blocks[currentBlock]["recievedCommitSig"]; !exists {
-			blocks[currentBlock]["receivedCommitSig"] = messageTime
+		if _, exists := blocks[furthestBlock]["commitSigReady"]; !exists {
+			blocks[furthestBlock]["receivedCommitSig"] = messageTime
 		}
 
 	case commitSigReadyMessage:
-		if _, exists := blocks[currentBlock]["commitSigReady"]; !exists {
-			blocks[currentBlock]["commitSigReady"] = messageTime
+		if _, exists := blocks[furthestBlock]["commitSigReady"]; !exists {
+			blocks[furthestBlock]["commitSigReady"] = messageTime
 		}
 
 	case newBlockProposalMessage:
-		blockNum := int(logMap["blockNum"].(float64)) - 1
-		blocks[blockNum]["newBlockProposal"] = messageTime
+		blockNum := int(logMap["blockNum"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+
+			blocks[blockNum-blockOffset]["newBlockProposal"] = messageTime
+		}
 
 	case startingConsensusMessage:
-		blockNum := int(logMap["myBlock"].(float64)) - 1
-		blocks[blockNum]["startingConsensus"] = messageTime
+		blockNum := int(logMap["myBlock"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["startingConsensus"] = messageTime
+		}
 
 	case sentAnnounceMessage:
-		blockNum := int(logMap["myBlock"].(float64)) - 1
-		blocks[blockNum]["sentAnnounce"] = messageTime
+		blockNum := int(logMap["myBlock"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["sentAnnounce"] = messageTime
+		}
 
 	case quorumMessage:
 		if logMap["phase"] == "Prepare" {
@@ -115,42 +130,56 @@ func analyzeOutput(logMap map[string]interface{}) {
 		}
 
 	case sentPrepareMessage:
-		blockNum := int(logMap["blockNum"].(float64)) - 1
-		blocks[blockNum]["sentPrepare"] = messageTime
+		blockNum := int(logMap["blockNum"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["sentPrepare"] = messageTime
+		}
 
 	case twoThirdsMessage:
-		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
-		blocks[blockNum]["enoughCommitted"] = messageTime
+		blockNum := int(logMap["MsgBlockNum"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["enoughCommitted"] = messageTime
+		}
 
 	case gracePeriodStartMessage:
-		blockNum := int(logMap["myBlock"].(float64)) - 1
-		blocks[blockNum]["gracePeriodStart"] = messageTime
+		blockNum := int(logMap["myBlock"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["gracePeriodStart"] = messageTime
+		}
 
 	case insertedNewBlockMessage:
 		blockNum, _ := strconv.Atoi(logMap["number"].(string))
-		blocks[blockNum-1]["insertedNewBlock"] = messageTime
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["insertedNewBlock"] = messageTime
+		}
 
 	case sentCommittedMessage:
-		blockNum := int(logMap["blockNum"].(float64)) - 1
-		blocks[blockNum]["sentCommitted"] = messageTime
+		blockNum := int(logMap["blockNum"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["sentCommitted"] = messageTime
+		}
 
 	case oneHundredPercentMessage:
-		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
-		blocks[blockNum]["100PercentCommitted"] = messageTime
+		blockNum := int(logMap["MsgBlockNum"].(float64))
+		if blockNum-blockOffset < len(blocks) {
+			blocks[blockNum-blockOffset]["100PercentCommitted"] = messageTime
+		}
 
 	case gracePeriodEndMessage:
-		blockNum := int(logMap["MsgBlockNum"].(float64)) - 1
-		blocks[blockNum]["gracePeriodEnd"] = messageTime
-		if _, exists := blocks[blockNum]["consensusReached"]; exists {
-			submitBlockData(currentBlock)
-			currentBlock++
+		blockNum := int(logMap["MsgBlockNum"].(float64))
+		if blockNum-blockOffset >= 0 {
+			blocks[blockNum-blockOffset]["gracePeriodEnd"] = messageTime
+			if _, exists := blocks[blockNum-blockOffset]["consensusReached"]; exists {
+				submitBlockData(blockOffset + currentBlock)
+				currentBlock++
+			}
 		}
 
 	case consensusReachedMessage:
-		blockNum := int(logMap["blockNum"].(float64)) - 1
-		blocks[blockNum]["consensusReached"] = messageTime
+		blockNum := int(logMap["blockNum"].(float64))
+		blocks[blockNum-blockOffset]["consensusReached"] = messageTime
 		if _, exists := blocks[currentBlock]["gracePeriodEnd"]; exists {
-			submitBlockData(currentBlock)
+			submitBlockData(blockOffset + currentBlock)
 			currentBlock++
 		}
 	default:
@@ -165,7 +194,7 @@ func analyzeOutput(logMap map[string]interface{}) {
 }
 
 func submitBlockData(block int) {
-	blockTime := blocks[block]
+	blockTime := blocks[currentBlock]
 	metrics := getMeasuredMetrics()
 	firstMetric := metrics[0]
 	firstMetricTime := blockTime[firstMetric]
@@ -176,10 +205,10 @@ func compareNextMetric(metric string, metricTime time.Time, metricTimes map[stri
 	if len(metricArray) > 0 {
 		nextMetric := metricArray[0]
 		if nextMetricTime, exists := metricTimes[nextMetric]; exists {
-			fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block+1, nextMetricTime.Sub(metricTime))
+			fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block, nextMetricTime.Sub(metricTime))
 			compareNextMetric(nextMetric, nextMetricTime, metricTimes, metricArray[1:], block)
 		} else {
-			fmt.Printf("There is no metric %s for block %v\n", nextMetric, block+1)
+			fmt.Printf("There is no metric %s for block %v\n", nextMetric, block)
 			compareNextMetric(metric, metricTime, metricTimes, metricArray[1:], block)
 		}
 	}

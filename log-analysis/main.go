@@ -17,11 +17,18 @@ func main() {
 		log.Fatal(err)
 	}
 	defer file.Close()
-
+	firstBlock := false
 	reader := bufio.NewScanner(file)
 	for reader.Scan() {
 		parsedOutput := parse(reader.Text())
-		analyzeOutput(parsedOutput)
+		if !firstBlock {
+			if parsedOutput["message"] == "PROPOSING NEW BLOCK ------------------------------------------------" {
+				firstBlock = true
+				analyzeOutput(parsedOutput)
+			}
+		} else {
+			analyzeOutput(parsedOutput)
+		}
 	}
 
 	if err := reader.Err(); err != nil {
