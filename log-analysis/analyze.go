@@ -30,17 +30,25 @@ const (
 	consensusReachedMessage  = "HOORAY!!!!!!! CONSENSUS REACHED!!!!!!!"
 )
 
+type averageAmount struct {
+	amount      int64
+	averageTime int64
+}
+
 var blocks []map[string]time.Time
 var currentBlock = 0
 var blockOffset = 0
 var furthestBlock = -1
 var initializedFirstBlock = false
+var averages = make(map[string]*averageAmount)
 
 //Go constant string array
+//Vrf Generation, 95 Percent Committed, and 100 Percent committed don't appear at consistent times
+//relative to other metrics, so these metrics are ignored for average values.
 func getMeasuredMetrics() []string {
-	return []string{"proposing", "receivedCommitSig", "vrfGenerated", "crosslinkProposal", "commitSigReady", "newBlockProposal",
+	return []string{"proposing", "receivedCommitSig", "crosslinkProposal", "commitSigReady", "newBlockProposal",
 		"startingConsensus", "sentAnnounce", "firstPrepare", "enoughPrepared", "sentPrepare", "firstCommit",
-		"enoughCommitted", "95PercentCommitted", "100PercentCommitted", "consensusReached", "gracePeriodEnd"}
+		"enoughCommitted", "gracePeriodStart", "insertedNewBlock", "sentCommitted", "consensusReached", "gracePeriodEnd"}
 }
 
 func analyzeOutput(logMap map[string]interface{}) {
@@ -205,10 +213,41 @@ func compareNextMetric(metric string, metricTime time.Time, metricTimes map[stri
 	if len(metricArray) > 0 {
 		nextMetric := metricArray[0]
 		if nextMetricTime, exists := metricTimes[nextMetric]; exists {
-			fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block, nextMetricTime.Sub(metricTime))
+			timeDifference := nextMetricTime.Sub(metricTime)
+			fmt.Printf("Time between %s and %s for block %v was %v\n", metric, nextMetric, block, timeDifference)
 			compareNextMetric(nextMetric, nextMetricTime, metricTimes, metricArray[1:], block)
+			addAverage(metric+nextMetric, int64(timeDifference))
 		} else {
 			compareNextMetric(metric, metricTime, metricTimes, metricArray[1:], block)
+		}
+	}
+}
+
+func addAverage(metric string, metricTime int64) {
+	if oldAverage, exists := averages[metric]; exists {
+		newAmount := oldAverage.amount + 1
+		newAverage := oldAverage.averageTime + ((metricTime - oldAverage.averageTime) / newAmount)
+		averages[metric] = &averageAmount{amount: newAmount, averageTime: newAverage}
+	} else {
+		averages[metric] = &averageAmount{amount: 1, averageTime: metricTime}
+	}
+}
+
+func printAverages() {
+	metrics := getMeasuredMetrics()
+	firstMetric := metrics[0]
+	recurseAverages(firstMetric, metrics[1:])
+}
+
+func recurseAverages(metric string, metricArray []string) {
+	if len(metricArray) > 0 {
+		nextMetric := metricArray[0]
+		key := metric + nextMetric
+		if averageMetric, exists := averages[key]; exists {
+			fmt.Printf("Average Time between %s and %s was %v\n", metric, nextMetric, time.Duration(averageMetric.averageTime))
+			recurseAverages(nextMetric, metricArray[1:])
+		} else {
+			recurseAverages(metric, metricArray[1:])
 		}
 	}
 }

@@ -30,6 +30,7 @@ func main() {
 			analyzeOutput(parsedOutput)
 		}
 	}
+	printAverages()
 
 	if err := reader.Err(); err != nil {
 		log.Fatal(err)
