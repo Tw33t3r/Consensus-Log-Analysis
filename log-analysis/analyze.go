@@ -66,8 +66,9 @@ func analyzeOutput(logMap map[string]interface{}) {
 
 	case vrfGeneratedMessage:
 		blockNum := int(logMap["BlockNum"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["vrfGenerated"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["vrfGenerated"] = messageTime
 		}
 
 	case recievedCommitSigMessage:
@@ -82,21 +83,23 @@ func analyzeOutput(logMap map[string]interface{}) {
 
 	case newBlockProposalMessage:
 		blockNum := int(logMap["blockNum"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-
-			blocks[blockNum-blockOffset]["newBlockProposal"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["newBlockProposal"] = messageTime
 		}
 
 	case startingConsensusMessage:
 		blockNum := int(logMap["myBlock"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["startingConsensus"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["startingConsensus"] = messageTime
 		}
 
 	case sentAnnounceMessage:
 		blockNum := int(logMap["myBlock"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["sentAnnounce"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["sentAnnounce"] = messageTime
 		}
 
 	case quorumMessage:
@@ -139,38 +142,44 @@ func analyzeOutput(logMap map[string]interface{}) {
 
 	case sentPrepareMessage:
 		blockNum := int(logMap["blockNum"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["sentPrepare"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["sentPrepare"] = messageTime
 		}
 
 	case twoThirdsMessage:
 		blockNum := int(logMap["MsgBlockNum"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["enoughCommitted"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["enoughCommitted"] = messageTime
 		}
 
 	case gracePeriodStartMessage:
 		blockNum := int(logMap["myBlock"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["gracePeriodStart"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["gracePeriodStart"] = messageTime
 		}
 
 	case insertedNewBlockMessage:
 		blockNum, _ := strconv.Atoi(logMap["number"].(string))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["insertedNewBlock"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["insertedNewBlock"] = messageTime
 		}
 
 	case sentCommittedMessage:
 		blockNum := int(logMap["blockNum"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["sentCommitted"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["sentCommitted"] = messageTime
 		}
 
 	case oneHundredPercentMessage:
 		blockNum := int(logMap["MsgBlockNum"].(float64))
-		if blockNum-blockOffset < len(blocks) {
-			blocks[blockNum-blockOffset]["100PercentCommitted"] = messageTime
+		arrayBlockNumber := blockNum - blockOffset
+		if arrayBlockNumber < len(blocks) && arrayBlockNumber >= 0 {
+			blocks[arrayBlockNumber]["100PercentCommitted"] = messageTime
 		}
 
 	case gracePeriodEndMessage:
@@ -185,10 +194,12 @@ func analyzeOutput(logMap map[string]interface{}) {
 
 	case consensusReachedMessage:
 		blockNum := int(logMap["blockNum"].(float64))
-		blocks[blockNum-blockOffset]["consensusReached"] = messageTime
-		if _, exists := blocks[currentBlock]["gracePeriodEnd"]; exists {
-			submitBlockData(blockOffset + currentBlock)
-			currentBlock++
+		if blockNum-blockOffset >= 0 {
+			blocks[blockNum-blockOffset]["consensusReached"] = messageTime
+			if _, exists := blocks[currentBlock]["gracePeriodEnd"]; exists {
+				submitBlockData(blockOffset + currentBlock)
+				currentBlock++
+			}
 		}
 	default:
 		if strings.Contains(logMap["message"].(string), " pending crosslinks") {
